@@ -43,6 +43,11 @@ PRICE_STARS = 580
 # Ссылка на курс, которую бот присылает после оплаты.
 COURSE_URL = "https://hablaargentina.com/app.html"
 
+# Код доступа к курсу. Должен совпадать с ACCESS_CODE в app.html.
+# Бот присылает ссылку с этим кодом — покупателю не нужно вводить его вручную.
+ACCESS_CODE = "HABLA2026"
+COURSE_URL_WITH_CODE = COURSE_URL + "?code=" + ACCESS_CODE
+
 # Название и описание товара (видит покупатель на экране оплаты).
 PRODUCT_TITLE = "Курс «Habla Argentina»"
 PRODUCT_DESC = "Полный доступ навсегда: 15 уроков, 8 диалогов, озвучка и умное повторение."
@@ -117,7 +122,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     save_buyer(user_id)
     await update.message.reply_text(
         "¡Gracias! 🎉 Оплата прошла успешно.\n\n"
-        f"Вот твой доступ к курсу:\n{COURSE_URL}\n\n"
+        f"Вот твой доступ к курсу:\n{COURSE_URL_WITH_CODE}\n\n"
         "Открой ссылку на телефоне или компьютере — доступ остаётся навсегда. "
         "Если потеряешь ссылку, напиши /mydostup, и я пришлю её снова.\n\n"
         "¡Buena suerte! 🇦🇷"
@@ -127,7 +132,7 @@ async def mydostup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id in load_buyers():
         await update.message.reply_text(
-            f"Твой доступ к курсу:\n{COURSE_URL}"
+            f"Твой доступ к курсу:\n{COURSE_URL_WITH_CODE}"
         )
     else:
         await update.message.reply_text(
