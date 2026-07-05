@@ -36,7 +36,8 @@ from telegram.ext import (
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_СЮДА_ТОКЕН_ОТ_BOTFATHER")
 
 # Цена в звёздах Telegram Stars. 990 ₽ ≈ 700 звёзд (курс плавает — подстрой при запуске).
-PRICE_STARS = 700
+# ВРЕМЕННО 100 для теста оплаты. После проверки верни 700.
+PRICE_STARS = 100
 
 # Ссылка на курс, которую бот присылает после оплаты.
 COURSE_URL = "https://hablaargentina.com/app.html"
