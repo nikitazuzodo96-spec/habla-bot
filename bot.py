@@ -61,6 +61,17 @@ COURSES = {
     },
 }
 
+# Комбо-предложение: оба курса вместе со скидкой 20% от суммы цен по отдельности.
+# 580 + 1200 = 1780 звёзд; 1780 * 0.8 = 1424 звезды.
+BUNDLE = {
+    "title": "Оба курса",
+    "product_title": "Оба курса «Быстрый старт» + «А1» (-20%)",
+    "product_desc": "Полный доступ навсегда к обоим курсам сразу, дешевле на 20%, чем покупать по отдельности.",
+    "price_stars": 1424,
+    "button_label": "🔥 Оба курса со скидкой 20% — 1424 ⭐",
+    "includes": ["quickstart", "a1"],
+}
+
 # Файл, где хранится список оплативших (user_id -> список купленных курсов).
 BUYERS_FILE = "buyers.json"
 
@@ -104,7 +115,8 @@ WELCOME = (
     "🇦🇷 *Быстрый старт* — 16 уроков и 8 диалогов на реальные бытовые ситуации: "
     "магазин, лавка, аптека, транспорт, аэропорт.\n\n"
     "📘 *Курс А1* — 24 урока по грамматике и voseo, для тех, кто хочет говорить увереннее.\n\n"
-    "Выбери курс ниже 👇"
+    "🔥 Можно взять оба курса сразу со скидкой 20%.\n\n"
+    "Выбери вариант ниже 👇"
 )
 
 def courses_keyboard():
@@ -112,6 +124,7 @@ def courses_keyboard():
         [InlineKeyboardButton(c["button_label"], callback_data=f"buy:{key}")]
         for key, c in COURSES.items()
     ]
+    buttons.append([InlineKeyboardButton(BUNDLE["button_label"], callback_data="buy:bundle")])
     return InlineKeyboardMarkup(buttons)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,6 +136,21 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     course_key = query.data.split(":", 1)[1]
+
+    if course_key == "bundle":
+        prices = [LabeledPrice(label=BUNDLE["product_title"], amount=BUNDLE["price_stars"])]
+        await context.bot.send_invoice(
+            chat_id=query.from_user.id,
+            title=BUNDLE["product_title"],
+            description=BUNDLE["product_desc"],
+            payload="habla_course_bundle",
+            provider_token="",           # пусто — это оплата звёздами
+            currency="XTR",              # XTR = Telegram Stars
+            prices=prices,
+            start_parameter="habla",
+        )
+        return
+
     course = COURSES.get(course_key)
     if not course:
         return
@@ -146,8 +174,25 @@ async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payload = update.message.successful_payment.invoice_payload
     course_key = payload.replace("habla_course_", "")
-    course = COURSES.get(course_key)
     user_id = update.message.from_user.id
+
+    if course_key == "bundle":
+        for key in BUNDLE["includes"]:
+            save_buyer(user_id, key)
+        links = "\n".join(
+            f"«{COURSES[key]['title']}»: {COURSES[key]['course_url']}?code={COURSES[key]['access_code']}"
+            for key in BUNDLE["includes"]
+        )
+        await update.message.reply_text(
+            "¡Gracias! 🎉 Оплата прошла успешно.\n\n"
+            f"Вот доступ к обоим курсам:\n{links}\n\n"
+            "Открой ссылки на телефоне или компьютере — доступ остаётся навсегда. "
+            "Если потеряешь ссылки, напиши /mydostup, и я пришлю их снова.\n\n"
+            "¡Buena suerte! 🇦🇷"
+        )
+        return
+
+    course = COURSES.get(course_key)
     if not course:
         await update.message.reply_text(
             "Оплата прошла, но не удалось определить курс. Напиши мне, разберёмся."
