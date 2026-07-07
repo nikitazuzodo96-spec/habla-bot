@@ -1,12 +1,12 @@
 """
-Habla Argentina — бот для продажи доступа к курсу через Telegram Stars.
+Habla Argentina — бот для продажи доступа к курсам через Telegram Stars.
 
 Что делает:
-  /start        — приветствие и кнопка "Купить курс"
-  оплата Stars  — после успешной оплаты бот присылает ссылку на курс
-  /mydostup     — повторно прислать ссылку тем, кто уже оплатил
+  /start        — приветствие и кнопки с обоими курсами
+  оплата Stars  — после успешной оплаты бот присылает ссылку на купленный курс
+  /mydostup     — повторно прислать ссылки на все оплаченные курсы
 
-Настройки ниже (BOT_TOKEN, PRICE_STARS, COURSE_URL) — меняются в одном месте.
+Настройки ниже (BOT_TOKEN, курсы в COURSES) — меняются в одном месте.
 """
 
 import os
@@ -35,41 +35,59 @@ from telegram.ext import (
 # но можно вписать прямо сюда в кавычки (менее безопасно).
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_СЮДА_ТОКЕН_ОТ_BOTFATHER")
 
-# Цена в звёздах Telegram Stars.
-# Курс на момент настройки: 500 звёзд = 849 ₽, т.е. 1 звезда ≈ 1.70 ₽.
-# 580 звёзд ≈ 990 ₽. Курс плавает — при необходимости подстрой это число.
-PRICE_STARS = 580
+# Курсы, которые продаёт бот. Ключ ("quickstart", "a1") используется как
+# invoice payload, поэтому менять его после запуска в проде не стоит —
+# лучше просто менять цену/ссылку/описание внутри.
+COURSES = {
+    "quickstart": {
+        "title": "Быстрый старт",
+        "product_title": "Курс «Быстрый старт»",
+        "product_desc": "Полный доступ навсегда: 16 уроков, 8 диалогов, умное повторение.",
+        "price_stars": 580,
+        "course_url": "https://hablaargentina.com/app.html",
+        # Код доступа должен совпадать с ACCESS_CODE в app.html.
+        "access_code": "HABLA2026",
+        "button_label": "Быстрый старт — 580 ⭐",
+    },
+    "a1": {
+        "title": "Курс А1",
+        "product_title": "Курс «А1»",
+        "product_desc": "24 урока по официальной программе уровня А1: грамматика, voseo, живые аргентинские конструкции.",
+        "price_stars": 1200,
+        "course_url": "https://hablaargentina.com/a1.html",
+        # Код доступа должен совпадать с ACCESS_CODE в a1.html.
+        "access_code": "A1HABLA2026",
+        "button_label": "Курс А1 — 1200 ⭐",
+    },
+}
 
-# Ссылка на курс, которую бот присылает после оплаты.
-COURSE_URL = "https://hablaargentina.com/app.html"
-
-# Код доступа к курсу. Должен совпадать с ACCESS_CODE в app.html.
-# Бот присылает ссылку с этим кодом — покупателю не нужно вводить его вручную.
-ACCESS_CODE = "HABLA2026"
-COURSE_URL_WITH_CODE = COURSE_URL + "?code=" + ACCESS_CODE
-
-# Название и описание товара (видит покупатель на экране оплаты).
-PRODUCT_TITLE = "Курс «Habla Argentina»"
-PRODUCT_DESC = "Полный доступ навсегда: 15 уроков, 8 диалогов, озвучка и умное повторение."
-
-# Файл, где хранится список оплативших (id пользователей).
+# Файл, где хранится список оплативших (user_id -> список купленных курсов).
 BUYERS_FILE = "buyers.json"
 
 # ============ ХРАНИЛИЩЕ ОПЛАТИВШИХ ============
+# Новый формат: {"<user_id>": ["quickstart", "a1"]}
 
 def load_buyers():
     try:
         with open(BUYERS_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
+            data = json.load(f)
     except Exception:
-        return set()
+        return {}
+    if isinstance(data, list):
+        # Старый формат (до появления второго курса) — просто список id,
+        # все они покупали единственный на тот момент курс "Быстрый старт".
+        return {str(uid): ["quickstart"] for uid in data}
+    return data
 
-def save_buyer(user_id):
+def save_buyer(user_id, course_key):
     buyers = load_buyers()
-    buyers.add(user_id)
+    key = str(user_id)
+    owned = set(buyers.get(key, []))
+    owned.add(course_key)
+    buyers[key] = list(owned)
     try:
         with open(BUYERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(list(buyers), f)
+            json.dump(buyers, f)
     except Exception as e:
         logging.error("Не удалось сохранить покупателя: %s", e)
 
@@ -82,31 +100,39 @@ logging.basicConfig(
 
 WELCOME = (
     "¡Hola! 🇦🇷\n\n"
-    "Это бот курса *Habla Argentina* — практический аргентинский испанский "
-    "для тех, кто только приехал.\n\n"
-    "15 уроков, 8 диалогов-симуляций, озвучка и умное повторение. "
-    "Доступ навсегда.\n\n"
-    "Нажми кнопку ниже, чтобы получить курс 👇"
+    "Это бот курсов *Habla Argentina*.\n\n"
+    "🇦🇷 *Быстрый старт* — 16 уроков и 8 диалогов на реальные бытовые ситуации: "
+    "магазин, лавка, аптека, транспорт, аэропорт.\n\n"
+    "📘 *Курс А1* — 24 урока по грамматике и voseo, для тех, кто хочет говорить увереннее.\n\n"
+    "Выбери курс ниже 👇"
 )
 
+def courses_keyboard():
+    buttons = [
+        [InlineKeyboardButton(c["button_label"], callback_data=f"buy:{key}")]
+        for key, c in COURSES.items()
+    ]
+    return InlineKeyboardMarkup(buttons)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(f"Купить курс — {PRICE_STARS} ⭐", callback_data="buy")]]
-    )
     await update.message.reply_text(
-        WELCOME, parse_mode="Markdown", reply_markup=keyboard
+        WELCOME, parse_mode="Markdown", reply_markup=courses_keyboard()
     )
 
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    course_key = query.data.split(":", 1)[1]
+    course = COURSES.get(course_key)
+    if not course:
+        return
     # Для Telegram Stars: currency="XTR", provider_token пустой.
-    prices = [LabeledPrice(label=PRODUCT_TITLE, amount=PRICE_STARS)]
+    prices = [LabeledPrice(label=course["product_title"], amount=course["price_stars"])]
     await context.bot.send_invoice(
         chat_id=query.from_user.id,
-        title=PRODUCT_TITLE,
-        description=PRODUCT_DESC,
-        payload="habla_course_access",
+        title=course["product_title"],
+        description=course["product_desc"],
+        payload=f"habla_course_{course_key}",
         provider_token="",           # пусто — это оплата звёздами
         currency="XTR",              # XTR = Telegram Stars
         prices=prices,
@@ -118,27 +144,42 @@ async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.pre_checkout_query.answer(ok=True)
 
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    payload = update.message.successful_payment.invoice_payload
+    course_key = payload.replace("habla_course_", "")
+    course = COURSES.get(course_key)
     user_id = update.message.from_user.id
-    save_buyer(user_id)
+    if not course:
+        await update.message.reply_text(
+            "Оплата прошла, но не удалось определить курс. Напиши мне, разберёмся."
+        )
+        return
+    save_buyer(user_id, course_key)
+    link = course["course_url"] + "?code=" + course["access_code"]
     await update.message.reply_text(
         "¡Gracias! 🎉 Оплата прошла успешно.\n\n"
-        f"Вот твой доступ к курсу:\n{COURSE_URL_WITH_CODE}\n\n"
+        f"Вот твой доступ к курсу «{course['title']}»:\n{link}\n\n"
         "Открой ссылку на телефоне или компьютере — доступ остаётся навсегда. "
         "Если потеряешь ссылку, напиши /mydostup, и я пришлю её снова.\n\n"
         "¡Buena suerte! 🇦🇷"
     )
 
 async def mydostup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id in load_buyers():
-        await update.message.reply_text(
-            f"Твой доступ к курсу:\n{COURSE_URL_WITH_CODE}"
-        )
-    else:
+    user_id = str(update.message.from_user.id)
+    buyers = load_buyers()
+    owned = buyers.get(user_id, [])
+    if not owned:
         await update.message.reply_text(
             "Пока не вижу твоей оплаты. Нажми /start и купи курс, "
             "а если ты уже платил — напиши мне, разберёмся."
         )
+        return
+    lines = ["Твои курсы:"]
+    for key in owned:
+        course = COURSES.get(key)
+        if course:
+            link = course["course_url"] + "?code=" + course["access_code"]
+            lines.append(f"«{course['title']}»: {link}")
+    await update.message.reply_text("\n".join(lines))
 
 def main():
     if not BOT_TOKEN or "ВСТАВЬ" in BOT_TOKEN:
@@ -147,7 +188,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mydostup", mydostup))
-    app.add_handler(CallbackQueryHandler(buy, pattern="^buy$"))
+    app.add_handler(CallbackQueryHandler(buy, pattern="^buy:"))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(
         MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment)
