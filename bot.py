@@ -190,15 +190,17 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if course_key == "bundle":
         for key in BUNDLE["includes"]:
             save_buyer(user_id, key)
-        links = "\n".join(
-            f"«{COURSES[key]['title']}»: {COURSES[key]['course_url']}?code={COURSES[key]['access_code']}"
+        blocks = "\n\n".join(
+            f"«{COURSES[key]['title']}»\n"
+            f"Ссылка: {COURSES[key]['course_url']}\n"
+            f"Пароль: {COURSES[key]['access_code']}"
             for key in BUNDLE["includes"]
         )
         await update.message.reply_text(
             "¡Gracias! 🎉 Оплата прошла успешно.\n\n"
-            f"Вот доступ ко всем курсам:\n{links}\n\n"
-            "Открой ссылки на телефоне или компьютере — доступ остаётся навсегда. "
-            "Если потеряешь ссылки, напиши /mydostup, и я пришлю их снова.\n\n"
+            f"Вот доступ ко всем курсам:\n\n{blocks}\n\n"
+            "Открой ссылку, введи пароль на экране входа — доступ остаётся навсегда. "
+            "Если потеряешь данные, напиши /mydostup, и я пришлю их снова.\n\n"
             "¡Buena suerte! 🇦🇷"
         )
         return
@@ -210,12 +212,13 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
     save_buyer(user_id, course_key)
-    link = course["course_url"] + "?code=" + course["access_code"]
     await update.message.reply_text(
         "¡Gracias! 🎉 Оплата прошла успешно.\n\n"
-        f"Вот твой доступ к курсу «{course['title']}»:\n{link}\n\n"
-        "Открой ссылку на телефоне или компьютере — доступ остаётся навсегда. "
-        "Если потеряешь ссылку, напиши /mydostup, и я пришлю её снова.\n\n"
+        f"Вот твой доступ к курсу «{course['title']}»:\n"
+        f"Ссылка: {course['course_url']}\n"
+        f"Пароль: {course['access_code']}\n\n"
+        "Открой ссылку, введи пароль на экране входа — доступ остаётся навсегда. "
+        "Если потеряешь данные, напиши /mydostup, и я пришлю их снова.\n\n"
         "¡Buena suerte! 🇦🇷"
     )
 
@@ -229,13 +232,16 @@ async def mydostup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "а если ты уже платил — напиши мне, разберёмся."
         )
         return
-    lines = ["Твои курсы:"]
+    blocks = ["Твои курсы:"]
     for key in owned:
         course = COURSES.get(key)
         if course:
-            link = course["course_url"] + "?code=" + course["access_code"]
-            lines.append(f"«{course['title']}»: {link}")
-    await update.message.reply_text("\n".join(lines))
+            blocks.append(
+                f"«{course['title']}»\n"
+                f"Ссылка: {course['course_url']}\n"
+                f"Пароль: {course['access_code']}"
+            )
+    await update.message.reply_text("\n\n".join(blocks))
 
 def main():
     if not BOT_TOKEN or "ВСТАВЬ" in BOT_TOKEN:
