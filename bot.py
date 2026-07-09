@@ -6,6 +6,7 @@ Habla Argentina — бот для продажи доступа к курсам 
   оплата Stars  — после оплаты бот просит почту и создаёт личный аккаунт
                   (логин = почта, пароль генерируется автоматически)
   /mydostup     — повторно прислать логин, пароль и список купленных курсов
+  /support      — ссылка на личку для вопросов и поддержки
 
 Аккаунты хранятся в Firebase (Authentication + Firestore, бесплатный тариф).
 Настройки ниже (BOT_TOKEN, курсы в COURSES, FIREBASE_*) — меняются в одном месте.
@@ -87,6 +88,9 @@ BUNDLE = {
     "button_label": "🔥 Все три курса со скидкой 30% — 2086 ⭐",
     "includes": ["quickstart", "a1", "a2"],
 }
+
+# Личный Telegram для вопросов и поддержки.
+SUPPORT_URL = "https://t.me/Hablaargentina"
 
 # Файл, где хранится информация о покупателях (user_id -> email/пароль/курсы).
 BUYERS_FILE = "buyers.json"
@@ -203,11 +207,24 @@ def courses_keyboard():
         for key, c in COURSES.items()
     ]
     buttons.append([InlineKeyboardButton(BUNDLE["button_label"], callback_data="buy:bundle")])
+    buttons.append([InlineKeyboardButton("👩‍💻 Поддержка", url=SUPPORT_URL)])
     return InlineKeyboardMarkup(buttons)
+
+def support_keyboard():
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("👩‍💻 Написать в поддержку", url=SUPPORT_URL)]]
+    )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         WELCOME, parse_mode="Markdown", reply_markup=courses_keyboard()
+    )
+
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Есть вопрос по курсу, доступу или оплате?\n"
+        "Напиши прямо в личку — отвечаю обычно в течение нескольких часов.",
+        reply_markup=support_keyboard(),
     )
 
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -310,15 +327,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error("Firebase signUp failed: %s", e)
         await update.message.reply_text(
             "Не получилось создать аккаунт на эту почту — возможно, она уже "
-            "используется другим покупателем. Напиши другую почту, или напиши мне "
-            "лично, разберёмся:"
+            "используется другим покупателем. Напиши другую почту, или напиши в "
+            "поддержку, разберёмся:",
+            reply_markup=support_keyboard(),
         )
         return
     except Exception as e:
         logging.error("Ошибка при создании аккаунта: %s", e)
         await update.message.reply_text(
             "Что-то пошло не так при создании аккаунта. Попробуй ещё раз через минуту "
-            "или напиши мне лично."
+            "или напиши в поддержку.",
+            reply_markup=support_keyboard(),
         )
         return
 
@@ -353,7 +372,8 @@ async def mydostup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not record or not record.get("email"):
         await update.message.reply_text(
             "Пока не вижу твоей оплаты. Нажми /start и купи курс, "
-            "а если ты уже платил — напиши мне, разберёмся."
+            "а если ты уже платил — напиши в поддержку, разберёмся.",
+            reply_markup=support_keyboard(),
         )
         return
 
@@ -374,6 +394,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mydostup", mydostup))
+    app.add_handler(CommandHandler("support", support))
     app.add_handler(CallbackQueryHandler(buy, pattern="^buy:"))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(
