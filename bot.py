@@ -9,6 +9,7 @@ Habla Argentina — бот для продажи доступа к курсам.
                   (логин = почта, пароль генерируется автоматически)
   /mydostup     — повторно прислать логин, пароль и список купленных курсов
   /support      — ссылка на личку для вопросов и поддержки
+  /visitors     — (только админ) список всех, кто заходил в бота
 
 Аккаунты хранятся в Firebase (Authentication + Firestore, бесплатный тариф).
 Настройки ниже (BOT_TOKEN, CRYPTO_PAY_TOKEN, курсы в COURSES, FIREBASE_*) —
@@ -118,8 +119,16 @@ BUNDLE = {
 # Личный Telegram для вопросов и поддержки.
 SUPPORT_URL = "https://t.me/Hablaargentina"
 
+# Твой личный Telegram user_id (число) — только ты сможешь смотреть список
+# посетителей командой /visitors. Узнать свой id можно у бота @userinfobot.
+# Лучше задать через переменную окружения ADMIN_ID.
+ADMIN_ID = os.environ.get("ADMIN_ID", "")
+
 # Файл, где хранится информация о покупателях (user_id -> email/пароль/курсы).
 BUYERS_FILE = "buyers.json"
+
+# Файл-лог всех, кто хоть раз обратился к боту (даже если не купил).
+VISITORS_FILE = "visitors.json"
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -147,6 +156,40 @@ def save_buyers(buyers):
             json.dump(buyers, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logging.error("Не удалось сохранить покупателей: %s", e)
+
+# ============ ЛОГ ПОСЕТИТЕЛЕЙ (все, кто зашёл в бота) ============
+# Формат: {"<user_id>": {"username":..., "name":..., "first_seen":..., "last_seen":..., "visits": N}}
+import datetime
+
+def load_visitors():
+    try:
+        with open(VISITORS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_visitors(visitors):
+    try:
+        with open(VISITORS_FILE, "w", encoding="utf-8") as f:
+            json.dump(visitors, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logging.error("Не удалось сохранить посетителей: %s", e)
+
+def log_visitor(user):
+    """Записывает/обновляет посетителя. user — это update.effective_user."""
+    if user is None:
+        return
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    visitors = load_visitors()
+    uid = str(user.id)
+    name = " ".join(p for p in [user.first_name, user.last_name] if p)
+    rec = visitors.get(uid, {"first_seen": now, "visits": 0})
+    rec["username"] = user.username or ""
+    rec["name"] = name
+    rec["last_seen"] = now
+    rec["visits"] = rec.get("visits", 0) + 1
+    visitors[uid] = rec
+    save_visitors(visitors)
 
 # ============ FIREBASE (аккаунты покупателей) ============
 
@@ -280,9 +323,33 @@ def support_keyboard():
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    log_visitor(update.effective_user)
     await update.message.reply_text(
         WELCOME, parse_mode="Markdown", reply_markup=courses_keyboard()
     )
+
+async def visitors(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Только для админа: показать список всех, кто заходил в бота."""
+    user_id = str(update.effective_user.id)
+    if not ADMIN_ID or user_id != str(ADMIN_ID):
+        await update.message.reply_text("Эта команда доступна только администратору.")
+        return
+
+    data = load_visitors()
+    total = len(data)
+    if total == 0:
+        await update.message.reply_text("Пока нет ни одного посетителя.")
+        return
+
+    # Сортируем по последнему заходу, показываем последние 30.
+    items = sorted(data.items(), key=lambda kv: kv[1].get("last_seen", ""), reverse=True)
+    lines = [f"👥 Всего посетителей: {total}\n\nПоследние 30:"]
+    for uid, rec in items[:30]:
+        uname = f"@{rec['username']}" if rec.get("username") else "(без username)"
+        name = rec.get("name") or "—"
+        seen = rec.get("last_seen", "")[:10]
+        lines.append(f"• {name} {uname} · id {uid} · {seen} · заходов {rec.get('visits', 1)}")
+    await update.message.reply_text("\n".join(lines))
 
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -544,6 +611,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mydostup", mydostup))
     app.add_handler(CommandHandler("support", support))
+    app.add_handler(CommandHandler("visitors", visitors))
     app.add_handler(CallbackQueryHandler(choose_payment, pattern="^buy:"))
     app.add_handler(CallbackQueryHandler(pay_stars, pattern="^paystars:"))
     app.add_handler(CallbackQueryHandler(pay_crypto, pattern="^paycrypto:"))
