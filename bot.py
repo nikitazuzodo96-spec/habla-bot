@@ -39,6 +39,8 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     LabeledPrice,
+    WebAppInfo,
+    MenuButtonWebApp,
 )
 from telegram.ext import (
     Application,
@@ -120,6 +122,10 @@ BUNDLE = {
 
 # Личный Telegram для вопросов и поддержки.
 SUPPORT_URL = "https://t.me/Hablaargentina"
+
+# Mini App: страница курса, которая открывается прямо внутри Telegram.
+# app.html = Быстрый старт (первые 3 урока бесплатны всем — хороший вход).
+MINIAPP_URL = "https://hablaargentina.com/app.html"
 
 # Твой личный Telegram user_id (число) — только ты сможешь смотреть список
 # посетителей командой /visitors. Узнать свой id можно у бота @userinfobot.
@@ -311,7 +317,11 @@ WELCOME = (
 )
 
 def courses_keyboard():
+    # Открыть курс как Mini App прямо внутри Telegram (первые 3 урока бесплатны).
     buttons = [
+        [InlineKeyboardButton("🚀 Открыть курс в Telegram", web_app=WebAppInfo(url=MINIAPP_URL))]
+    ]
+    buttons += [
         [InlineKeyboardButton(c["button_label"], callback_data=f"buy:{key}")]
         for key, c in COURSES.items()
     ]
@@ -683,11 +693,25 @@ async def mydostup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Заходи на hablaargentina.com, открой страницу курса и введи эти логин и пароль."
     )
 
+async def on_startup(application):
+    """При запуске ставим синюю кнопку-меню бота на открытие курса как Mini App
+    прямо внутри Telegram."""
+    try:
+        await application.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="Открыть курс",
+                web_app=WebAppInfo(url=MINIAPP_URL),
+            )
+        )
+        logging.info("Menu button (Mini App) установлена.")
+    except Exception as e:
+        logging.error("Не удалось установить menu button: %s", e)
+
 def main():
     if not BOT_TOKEN or "ВСТАВЬ" in BOT_TOKEN:
         raise SystemExit("Ошибка: не задан BOT_TOKEN. Вставь токен от @BotFather.")
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mydostup", mydostup))
     app.add_handler(CommandHandler("support", support))
