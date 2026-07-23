@@ -132,11 +132,20 @@ MINIAPP_URL = "https://hablaargentina.com/app.html"
 # Лучше задать через переменную окружения ADMIN_ID.
 ADMIN_ID = os.environ.get("ADMIN_ID", "")
 
+# Папка для постоянного хранения данных. На Railway нужно подключить Volume и
+# задать переменную DATA_DIR=/data — тогда файлы переживают деплои и перезапуски.
+# Если переменная не задана, пишем в текущую папку (для локального запуска).
+DATA_DIR = os.environ.get("DATA_DIR", ".")
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except Exception as e:
+    logging.error("Не удалось создать папку данных %s: %s", DATA_DIR, e)
+
 # Файл, где хранится информация о покупателях (user_id -> email/пароль/курсы).
-BUYERS_FILE = "buyers.json"
+BUYERS_FILE = os.path.join(DATA_DIR, "buyers.json")
 
 # Файл-лог всех, кто хоть раз обратился к боту (даже если не купил).
-VISITORS_FILE = "visitors.json"
+VISITORS_FILE = os.path.join(DATA_DIR, "visitors.json")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
