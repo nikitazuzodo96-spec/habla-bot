@@ -10,6 +10,8 @@ Habla Argentina — бот для продажи доступа к курсам.
   /mydostup     — повторно прислать логин, пароль и список купленных курсов
   /support      — ссылка на личку для вопросов и поддержки
   /visitors     — (только админ) список всех, кто заходил в бота
+  /grantme      — (только админ) завести себе аккаунт со всеми курсами бесплатно
+  /grant EMAIL  — (только админ) подарить кому-то доступ ко всем курсам
 
 Аккаунты хранятся в Firebase (Authentication + Firestore, бесплатный тариф).
 Настройки ниже (BOT_TOKEN, CRYPTO_PAY_TOKEN, курсы в COURSES, FIREBASE_*) —
@@ -328,6 +330,62 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         WELCOME, parse_mode="Markdown", reply_markup=courses_keyboard()
     )
 
+async def grantme(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Только для админа: завести себе аккаунт со всеми курсами бесплатно."""
+    user_id = str(update.effective_user.id)
+    if not ADMIN_ID or user_id != str(ADMIN_ID):
+        await update.message.reply_text("Эта команда доступна только администратору.")
+        return
+    all_courses = list(COURSES.keys())  # quickstart, a1, a2
+    await complete_purchase(update.message.reply_text, update.effective_user.id, all_courses, context)
+
+async def grant(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Только для админа: подарить кому-то доступ ко всем курсам.
+    Использование: /grant email@почта — создаёт аккаунт и присылает логин/пароль,
+    которые админ пересылает получателю (для рекламы, блогеров, розыгрышей)."""
+    user_id = str(update.effective_user.id)
+    if not ADMIN_ID or user_id != str(ADMIN_ID):
+        await update.message.reply_text("Эта команда доступна только администратору.")
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "Использование: /grant email@почта\n"
+            "Создаст подарочный аккаунт со всеми курсами и пришлёт логин с паролем."
+        )
+        return
+
+    email = args[0].strip()
+    if not EMAIL_RE.match(email):
+        await update.message.reply_text("Не похоже на почту. Пример: /grant name@mail.com")
+        return
+
+    all_courses = list(COURSES.keys())
+    password = generate_password()
+    try:
+        create_account_and_grant(email, password, all_courses)
+    except requests.HTTPError as e:
+        logging.error("grant signUp failed: %s", e)
+        await update.message.reply_text(
+            "Не удалось создать аккаунт на эту почту — возможно, она уже используется. "
+            "Попробуй другую почту."
+        )
+        return
+    except Exception as e:
+        logging.error("grant failed: %s", e)
+        await update.message.reply_text("Что-то пошло не так, попробуй ещё раз через минуту.")
+        return
+
+    await update.message.reply_text(
+        "Готово! Подарочный доступ создан 🎁\n\n"
+        f"Логин: {email}\n"
+        f"Пароль: {password}\n\n"
+        "Курсы: все три (Быстрый старт, А1, А2)\n\n"
+        "Перешли эти данные человеку — он зайдёт на hablaargentina.com, "
+        "откроет страницу курса и введёт логин с паролем."
+    )
+
 async def visitors(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Только для админа: показать список всех, кто заходил в бота."""
     user_id = str(update.effective_user.id)
@@ -612,6 +670,8 @@ def main():
     app.add_handler(CommandHandler("mydostup", mydostup))
     app.add_handler(CommandHandler("support", support))
     app.add_handler(CommandHandler("visitors", visitors))
+    app.add_handler(CommandHandler("grantme", grantme))
+    app.add_handler(CommandHandler("grant", grant))
     app.add_handler(CallbackQueryHandler(choose_payment, pattern="^buy:"))
     app.add_handler(CallbackQueryHandler(pay_stars, pattern="^paystars:"))
     app.add_handler(CallbackQueryHandler(pay_crypto, pattern="^paycrypto:"))
